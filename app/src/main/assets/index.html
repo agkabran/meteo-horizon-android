@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Météo Horizon — Prévisions en Temps Réel</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Configuration Tailwind & Animations personnalisées -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    animation: {
+                        'float': 'float 6s ease-in-out infinite',
+                        'spin-slow': 'spin 18s linear infinite',
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'rain-drop': 'rainDrop 1.2s linear infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px)' },
+                            '50%': { transform: 'translateY(-8px)' },
+                        },
+                        rainDrop: {
+                            '0%': { transform: 'translateY(-4px)', opacity: '0' },
+                            '50%': { opacity: '1' },
+                            '100%': { transform: 'translateY(10px)', opacity: '0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Barre de défilement personnalisée discrète */
+        ::-webkit-scrollbar {
+            height: 6px;
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Effet Glassmorphism */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.18);
+        }
+
+        .glass-card-hover {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card-hover:hover {
+            background: rgba(255, 255, 255, 0.22);
+            transform: translateY(-2px);
+        }
+
+        /* Thèmes dynamiques de fond */
+        body {
+            transition: background 1.2s ease-in-out;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .theme-sunny {
+            background: linear-gradient(135deg, #1e88e5 0%, #38bdf8 45%, #f59e0b 100%);
+        }
+        .theme-cloudy {
+            background: linear-gradient(135deg, #475569 0%, #64748b 50%, #94a3b8 100%);
+        }
+        .theme-rain {
+            background: linear-gradient(135deg, #1e293b 0%, #1d4ed8 55%, #0f172a 100%);
+        }
+        .theme-snow {
+            background: linear-gradient(135deg, #60a5fa 0%, #93c5fd 50%, #cbd5e1 100%);
+        }
+        .theme-night {
+            background: linear-gradient(135deg, #090d16 0%, #1e1b4b 55%, #312e81 100%);
+        }
+    </style>
+</head>
+<body class="theme-sunny text-white antialiased selection:bg-white/30 selection:text-white">
+
+    <!-- Halo décoratif en arrière-plan -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div id="ambient-orb-1" class="absolute -top-24 -left-24 w-96 h-96 bg-white/15 rounded-full blur-3xl transition-all duration-1000"></div>
+        <div id="ambient-orb-2" class="absolute bottom-0 right-0 w-[30rem] h-[30rem] bg-black/15 rounded-full blur-3xl transition-all duration-1000"></div>
+    </div>
+
+    <!-- Conteneur Principal -->
+    <div class="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        
+        <!-- Notification / Bannière d'état (remplace alert()) -->
+        <div id="toast-banner" class="hidden mb-4 px-4 py-3 rounded-2xl glass-panel border-amber-300/40 bg-amber-500/20 flex items-center justify-between gap-3 text-sm transition-all">
+            <div class="flex items-center gap-2.5">
+                <svg class="w-5 h-5 text-amber-200 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span id="toast-message" class="font-medium text-white/95">Message d'information</span>
+            </div>
+            <button onclick="hideToast()" class="p-1 rounded-lg hover:bg-white/20 transition-colors" aria-label="Fermer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- En-tête : Logo, Barre de recherche, Géolocalisation et Basculeur °C/°F -->
+        <header class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 mb-6">
+            <!-- Marque / Titre -->
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl glass-panel flex items-center justify-center shadow-inner">
+                        <svg class="w-6 h-6 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold tracking-tight">Météo Horizon</h1>
+                        <p class="text-xs text-white/75" id="current-date-header">Chargement de la date...</p>
+                    </div>
+                </div>
+
+                <!-- Contrôles mobiles (°C/°F + GPS) -->
+                <div class="flex md:hidden items-center gap-2">
+                    <button id="geo-btn-mobile" onclick="handleGeolocation()" title="Ma position" class="p-2.5 rounded-xl glass-panel hover:bg-white/25 active:scale-95 transition-all">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                    </button>
+                    <button onclick="toggleUnit()" class="unit-toggle-btn px-3.5 py-2 rounded-xl glass-panel font-semibold text-sm hover:bg-white/25 active:scale-95 transition-all">
+                        °C / <span class="text-white/60">°F</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Barre de Recherche avec Autocomplétion -->
+            <div class="relative flex-1 max-w-xl">
+                <div class="relative flex items-center">
+                    <svg class="w-5 h-5 text-white/70 absolute left-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    <input 
+                        type="text" 
+                        id="city-search-input" 
+                        placeholder="Rechercher une ville (ex: Paris, Saint-Prix, Tokyo...)" 
+                        autocomplete="off"
+                        class="w-full pl-11 pr-10 py-3 rounded-2xl glass-panel text-white placeholder-white/65 focus:outline-none focus:ring-2 focus:ring-white/50 text-sm sm:text-base transition-all"
+                    >
+                    <button id="clear-search-btn" onclick="clearSearch()" class="hidden absolute right-3 p-1.5 rounded-full hover:bg-white/20 text-white/80">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Liste déroulante de suggestions -->
+                <div id="search-suggestions" class="hidden absolute left-0 right-0 mt-2 rounded-2xl glass-panel bg-slate-900/75 backdrop-blur-xl border border-white/25 shadow-2xl overflow-hidden z-50 divide-y divide-white/10">
+                    <!-- Rempli dynamiquement via JS -->
+                </div>
+            </div>
+
+            <!-- Contrôles Desktop (°C/°F + GPS) -->
+            <div class="hidden md:flex items-center gap-3">
+                <button id="geo-btn-desktop" onclick="handleGeolocation()" class="flex items-center gap-2 px-4 py-3 rounded-2xl glass-panel hover:bg-white/25 active:scale-95 transition-all text-sm font-medium">
+                    <svg class="w-4 h-4 text-sky-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                    <span>Ma position</span>
+                </button>
+
+                <button onclick="toggleUnit()" class="unit-toggle-btn px-4 py-3 rounded-2xl glass-panel font-semibold text-sm hover:bg-white/25 active:scale-95 transition-all">
+                    °C / <span class="text-white/60">°F</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Villes Rapides (Pills) -->
+        <nav aria-label="Villes rapides" class="flex items-center gap-2 overflow-x-auto pb-2 mb-6 no-scrollbar">
+            <span class="text-xs font-medium text-white/75 uppercase tracking-wider mr-1 shrink-0">Accès rapide :</span>
+            <div id="quick-cities-container" class="flex items-center gap-2">
+                <!-- Généré via JS -->
+            </div>
+        </nav>
+
+        <!-- Grille Principale Météo -->
+        <main id="weather-main-content" class="grid grid-cols-1 lg:grid-cols-12 gap-6 transition-opacity duration-300">
+            
+            <!-- Colonne Gauche (5 colonnes) : Météo Actuelle + Indicateurs Clés -->
+            <section class="lg:col-span-5 flex flex-col gap-6">
+                
+                <!-- Carte Principale Actuelle -->
+                <div class="glass-panel rounded-3xl p-6 sm:p-8 flex flex-col justify-between relative overflow-hidden">
+                    <div class="flex justify-between items-start gap-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h2 id="city-name" class="text-2xl sm:text-3xl font-bold tracking-tight">Saint-Prix</h2>
+                                <span id="data-source-badge" class="hidden text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white/90 font-semibold">Mode Démo</span>
+                            </div>
+                            <p id="city-region" class="text-sm text-white/80 mt-0.5">Île-de-France, France</p>
+                            <p id="local-time" class="text-xs text-white/65 mt-1">Heure locale : --:--</p>
+                        </div>
+
+                        <!-- Grande Icône Météo SVG Animée -->
+                        <div id="current-weather-icon" class="w-20 h-20 sm:w-24 sm:h-24 shrink-0 animate-float">
+                            <!-- SVG injecté par JS -->
+                        </div>
+                    </div>
+
+                    <div class="my-6 flex items-baseline gap-4">
+                        <span id="current-temp" class="text-6xl sm:text-7xl font-bold tracking-tighter">--°</span>
+                        <div class="flex flex-col">
+                            <span id="weather-condition" class="text-lg sm:text-xl font-medium capitalize">Chargement...</span>
+                            <span id="temp-minmax" class="text-sm text-white/80">Max --° • Min --°</span>
+                        </div>
+                    </div>
+
+                    <!-- Grille des 4 Détails Clés -->
+                    <div class="grid grid-cols-2 gap-3 pt-4 border-t border-white/15">
+                        <!-- Ressenti -->
+                        <div class="bg-white/10 rounded-2xl p-3.5 flex items-center gap-3">
+                            <div class="p-2 rounded-xl bg-white/15 text-amber-200">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-xs text-white/70">Ressenti</p>
+                                <p id="detail-feels-like" class="text-base sm:text-lg font-semibold">--°</p>
+                            </div>
+                        </div>
+
+                        <!-- Humidité -->
+                        <div class="bg-white/10 rounded-2xl p-3.5 flex items-center gap-3">
+                            <div class="p-2 rounded-xl bg-white/15 text-sky-200">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-xs text-white/70">Humidité</p>
+                                <p id="detail-humidity" class="text-base sm:text-lg font-semibold">--%</p>
+                            </div>
+                        </div>
+
+                        <!-- Vent -->
+                        <div class="bg-white/10 rounded-2xl p-3.5 flex items-center gap-3">
+                            <div class="p-2 rounded-xl bg-white/15 text-teal-200">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-xs text-white/70">Vent</p>
+                                <p id="detail-wind" class="text-base sm:text-lg font-semibold">-- km/h</p>
+                            </div>
+                        </div>
+
+                        <!-- Indice UV -->
+                        <div class="bg-white/10 rounded-2xl p-3.5 flex items-center gap-3">
+                            <div class="p-2 rounded-xl bg-white/15 text-yellow-200">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-xs text-white/70">Indice UV</p>
+                                <p id="detail-uv" class="text-base sm:text-lg font-semibold">--</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Carte Conseil Météo & Qualité du Jour -->
+                <div class="glass-panel rounded-3xl p-5 flex items-center gap-4">
+                    <div class="w-11 h-11 rounded-2xl bg-white/15 flex items-center justify-center shrink-0">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xs uppercase tracking-wider font-semibold text-white/75">Conseil du jour</h3>
+                        <p id="weather-advice" class="text-sm text-white/95 mt-0.5 leading-snug">Analyse des conditions atmosphériques en cours...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Colonne Droite (7 colonnes) : Prévisions 24h + Prévisions 7 jours -->
+            <section class="lg:col-span-7 flex flex-col gap-6">
+                
+                <!-- Prévisions Horaires sur 24h -->
+                <div class="glass-panel rounded-3xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <h3 class="font-semibold text-base sm:text-lg">Prévisions sur 24 heures</h3>
+                        </div>
+                        <span class="text-xs text-white/70">Heure par heure</span>
+                    </div>
+
+                    <div id="hourly-forecast-container" class="flex gap-3 overflow-x-auto pb-2">
+                        <!-- Éléments horaires générés via JS -->
+                    </div>
+                </div>
+
+                <!-- Prévisions sur 7 Jours -->
+                <div class="glass-panel rounded-3xl p-6 flex-1">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="font-semibold text-base sm:text-lg">Prévisions sur 7 jours</h3>
+                        </div>
+                        <span class="text-xs text-white/70">Min / Max</span>
+                    </div>
+
+                    <div id="daily-forecast-container" class="flex flex-col divide-y divide-white/10">
+                        <!-- Lignes journalières générées via JS -->
+                    </div>
+                </div>
+
+            </section>
+        </main>
+
+        <!-- Pied de page discret -->
+        <footer class="mt-8 text-center text-xs text-white/65">
+            <p>Données météorologiques fournies par <span class="font-medium text-white/85">Open-Meteo</span> • Interface réactive en temps réel</p>
+        </footer>
+    </div>
+
+    <!-- Script Applicatif Complet -->
+    <script>
+        /**
+         * ÉTAT GLOBAL DE L'APPLICATION
+         */
+        const AppState = {
+            unit: 'C', // 'C' ou 'F'
+            currentLocation: {
+                name: 'Saint-Prix',
+                region: 'Île-de-France',
+                country: 'France',
+                lat: 49.0069,
+                lon: 2.2625
+            },
+            weatherData: null,
+            isSimulated: false,
+            searchTimeout: null
+        };
+
+        // Liste des villes rapides prédéfinies
+        const QUICK_CITIES = [
+            { name: 'Saint-Prix', region: 'Île-de-France', country: 'France', lat: 49.0069, lon: 2.2625 },
+            { name: 'Paris', region: 'Île-de-France', country: 'France', lat: 48.8566, lon: 2.3522 },
+            { name: 'Lyon', region: 'Auvergne-Rhône-Alpes', country: 'France', lat: 45.7640, lon: 4.8357 },
+            { name: 'Marseille', region: 'Provence-Alpes-Côte d\'Azur', country: 'France', lat: 43.2965, lon: 5.3698 },
+            { name: 'Tokyo', region: 'Kanto', country: 'Japon', lat: 35.6762, lon: 139.6503 },
+            { name: 'New York', region: 'New York', country: 'États-Unis', lat: 40.7128, lon: -74.0060 }
+        ];
+
+        /**
+         * DICTIONNAIRE DES CODES WMO (Open-Meteo) EN FRANÇAIS + THÈMES
+         */
+        function getWeatherInfo(code, isDay = 1) {
+            // Codes WMO standards
+            const mapping = {
+                0: { label: 'Ciel dégagé', type: isDay ? 'sunny' : 'night', icon: isDay ? 'sun' : 'moon' },
+                1: { label: 'Principalement dégagé', type: isDay ? 'sunny' : 'night', icon: isDay ? 'partly-cloudy-day' : 'partly-cloudy-night' },
+                2: { label: 'Partiellement nuageux', type: isDay ? 'cloudy' : 'night', icon: isDay ? 'partly-cloudy-day' : 'partly-cloudy-night' },
+                3: { label: 'Couvert', type: isDay ? 'cloudy' : 'night', icon: 'cloudy' },
+                45: { label: 'Brouillard', type: 'cloudy', icon: 'fog' },
+                48: { label: 'Brouillard givrant', type: 'cloudy', icon: 'fog' },
+                51: { label: 'Bruine légère', type: 'rain', icon: 'rain' },
+                53: { label: 'Bruine modérée', type: 'rain', icon: 'rain' },
+                55: { label: 'Bruine dense', type: 'rain', icon: 'rain' },
+                56: { label: 'Bruine verglaçante', type: 'snow', icon: 'snow' },
+                57: { label: 'Bruine verglaçante forte', type: 'snow', icon: 'snow' },
+                61: { label: 'Pluie faible', type: 'rain', icon: 'rain' },
+                63: { label: 'Pluie modérée', type: 'rain', icon: 'rain' },
+                65: { label: 'Pluie forte', type: 'rain', icon: 'heavy-rain' },
+                66: { label: 'Pluie verglaçante', type: 'snow', icon: 'snow' },
+                67: { label: 'Pluie verglaçante forte', type: 'snow', icon: 'snow' },
+                71: { label: 'Chutes de neige faibles', type: 'snow', icon: 'snow' },
+                73: { label: 'Chutes de neige modérées', type: 'snow', icon: 'snow' },
+                75: { label: 'Fortes chutes de neige', type: 'snow', icon: 'snow' },
+                77: { label: 'Grains de neige', type: 'snow', icon: 'snow' },
+                80: { label: 'Averses de pluie faibles', type: 'rain', icon: 'rain' },
+                81: { label: 'Averses de pluie modérées', type: 'rain', icon: 'rain' },
+                82: { label: 'Averses violentes', type: 'rain', icon: 'heavy-rain' },
+                85: { label: 'Averses de neige faibles', type: 'snow', icon: 'snow' },
+                86: { label: 'Averses de neige fortes', type: 'snow', icon: 'snow' },
+                95: { label: 'Orage', type: 'rain', icon: 'thunder' },
+                96: { label: 'Orage avec grêle légère', type: 'rain', icon: 'thunder' },
+                99: { label: 'Orage avec forte grêle', type: 'rain', icon: 'thunder' }
+            };
+
+            return mapping[code] || { label: 'Variable', type: isDay ? 'cloudy' : 'night', icon: 'cloudy' };
+        }
+
+        /**
+         * BIBLIOTHÈQUE D'ICÔNES SVG ANIMÉES
+         */
+        function getWeatherSVG(iconType, sizeClass = "w-full h-full") {
+            switch (iconType) {
+                case 'sun':
+                    return `
+                        <svg class="${sizeClass}" viewBox="0 0 64 64" fill="none">
+                            <circle cx="32" cy="32" r="14" fill="#FBBF24" stroke="#FEF08A" stroke-width="2"/>
+                            <g class="origin-center animate-spin-slow" stroke="#FDE047" stroke-width="3.5" stroke-linecap="round">
+                                <line x1="32" y1="6" x2="32" y2="12"/>
+                                <line x1="32" y1="52" x2="32" y2="58"/>
+                                <line x1="6" y1="32" x2="12" y2="32"/>
+                                <line x1="52" y1="32" x2="58" y2="32"/>
+                                <line x1="13.6" y1="13.6" x2="17.9" y2="17.9"/>
+                                <line x1="46.1" y1="46.1" x2="50.4" y2="50.4"/>
+                                <line x1="13.6" y1="50.4" x2="17.9" y2="46.1"/>
+                                <line x1="46.1" y1="17.9" x2="50.4" y2="13.6"/>
+                            </g>
+                        </svg>`;
+                case 'moon':
+                    return `
+                        <svg class="${sizeClass}" viewBox="0 0 64 64" fill="none">
+                            <path d="M44.5 41.5C35.4 41.5 28 34.1 28 25C28 19.6 30.6 14.8 34.6 11.8C33.7 11.6 32.9 11.5 32 11.5C21.8 11.5 13.5 19.8 13.5 30C13.5 40.2 21.8 48.5 32 48.5C39.6 48.5 46.1 43.9 49 37.3C47.6 39.9 46.1 41.5 44.5 41.5Z" fill="#FEF08A" stroke="#FDE047" stroke-width="2" stroke-linejoin="round"/>
+                            <circle cx="46" cy="18" r="2" fill="#FEF9C3" class="animate-pulse"/>
+                            <circle cx="52" cy="26" r="1.5" fill="#FEF9C3" class="animate-pulse"/>
+                        </svg>`;
+                case 'partly-cloudy-day':
+                    return `
+                        <svg class="${sizeClass}" viewBox="0 0 64 64" fill="none">
+                            <circle cx="24" cy="24" r="10" fill="#FBBF24"/>
+                            <g stroke="#FDE047" stroke-width="2.5" stroke-linecap="round">
+                                <line x1="24" y1="8" x2="24" y2="11"/>
+                                <line x1="11" y1="13" x2="13.5" y2="15.5"/>
+                                <line x1="8" y1="24" x2="11" y2="24"/>
+                            </g>
+                            <path d="M22 46H46C51.5 46 56 41.5 56 36C56 30.8 52 26.5 46.9 26.1C45.3 19.7 39.5 15 32.5 15C24.5 15 18 21.3 17.6 29.2C14.4 30.7 12 34 12 37.8C12 42.3 16.5 46 22 46Z" fill="#F8FAFC" fill-opacity="0.95"/>
+                        </svg>`;
+                case 'partly-cloudy-night':
+                    return `
+                        <svg class="${sizeClass}" viewBox="0 0 64 64" fill="none">
+                            <path d="M27 25C22.5 25 18.8 21.3 18.8 16.8C18.8 14.1 20.1 11.7 22.1 10.2C21.6 10.1 21.2 10 20.8 10C15.7 10 11.5 14.2 11.5 19.3C11.5 24.4 15.7 28.6 20.8 28.6C24.6 28.6 27.8 26.3 29.3 23C28.6 24.3 27.8 25 27 25Z" fill="#FEF08A"/>
+                            <path d="M22 47H46C51.5 47 56 42.5 56 37C56 31.8 52 27.5 46.9 27.1C45.3 20.7 39.5 16 32.5 16C24.5 16 18 22.3 17.6 30.2C14.4 31.7 12 35 12 38.8C12 43.3 16.5 47 22 47Z" fill="#E2E8F0" fill-opacity="0.95"/>
+                        </svg>`;
+                case 'cloudy':
+                case 'fog':
+                    return `
+                        <svg class="${sizeClass}" viewBox="0 0 64 64" fill="none">
+                            <path d="M18 45H46C52.1 45 57 40.1 57 34C57 28.3 52.6 23.6 47 23.1C45.2 16.1 38.9 11 31.3 11C22.5 11 15.3 17.9 14.9 26.6C11.3 28.2 9 31.8 9 36C9 41 13 45 18 45Z" fill="#F1F5F9" fill-opacity="0.95"/>
+                            ${iconType === 'fog' ? '<line x1="14" y1="51" x2="50" y2="51" stroke="#CBD5E1" stroke-width="3" stroke-linecap="round"/><line x1="20" y1="56" x2="44" y2="56" stroke="#CBD5E1" stroke-width="3" stroke-linecap="round"/>' : ''}
+                        </svg>`;
+                case 'rain':
+                case 'heavy-rain':
+                    return `
+                        <svg class="${sizeClass}" viewBox="0 0 64 64" fill="none">
+                            <path d="M18 39H46C51.5 39 56 34.5 56 29C56 23.8 52 19.5 46.9 19.1C45.3 12.7 39.5 8 32.5 8C24.5 8 18 14.3 17.6 22.2C14.4 23.7 12 27 12 30.8C12 35.3 14.5 39 18 39Z" fill="#E2E8F0"/>
+                            <g stroke="#7DD3FC" stroke-width="3" stroke-linecap="round" class="animate-rain-drop">
+                                <line x1="22" y1="44" x2="19" y2="53"/>
+                                <line x1="32" y1="44" x2="29" y2="53"/>
+                                <line x1="42" y1="44" x2="39" y2="53"/>
+                            </g>
+                        </svg>`;
+                case 'snow':
+                    return `
+                        <svg class="${sizeClass}" viewBox="0 0 64 64" fill="none">
+                            <path d="M18 39H46C51.5 39 56 34.5 56 29C56 23.8 52 19.5 46.9 19.1C45.3 12.7 39.5 8 32.5 8C24.5 8 18 14.3 17.6 22.2C14.4 23.7 12 27 12 30.8C12 35.3 14.5 39 18 39Z" fill="#F8FAFC"/>
+                            <g fill="#FFFFFF" class="animate-pulse">
+                                <circle cx="22" cy="48" r="2.5"/>
+                                <circle cx="32" cy="52" r="2.5"/>
+                                <circle cx="42" cy="48" r="2.5"/>
+                                <circle cx="27" cy="57" r="2"/>
+                                <circle cx="37" cy="57" r="2"/>
+                            </g>
+                        </svg>`;
+                case 'thunder':
+                    return `
+                        <svg class="${sizeClass}" viewBox="0 0 64 64" fill="none">
+                            <path d="M18 38H46C51.5 38 56 33.5 56 28C56 22.8 52 18.5 46.9 18.1C45.3 11.7 39.5 7 32.5 7C24.5 7 18 13.3 17.6 21.2C14.4 22.7 12 26 12 29.8C12 34.3 14.5 38 18 38Z" fill="#CBD5E1"/>
+                            <path d="M34 36L26 48H33L30 58L41 44H34L34 36Z" fill="#FACC15" class="animate-pulse"/>
+                        </svg>`;
+                default:
+                    return `<svg class="${sizeClass}" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="16" fill="#FBBF24"/></svg>`;
+            }
+        }
+
+        /**
+         * GESTION DES NOTIFICATIONS BANNIÈRE
+         */
+        function showToast(message) {
+            const banner = document.getElementById('toast-banner');
+            const msgEl = document.getElementById('toast-message');
+            msgEl.textContent = message;
+            banner.classList.remove('hidden');
+        }
+
+        function hideToast() {
+            document.getElementById('toast-banner').classList.add('hidden');
+        }
+
+        /**
+         * CONVERSION TEMPÉRATURE & FORMATAGE
+         */
+        function formatTemp(celsius) {
+            if (celsius === null || celsius === undefined || isNaN(celsius)) return '--';
+            const val = AppState.unit === 'C' ? celsius : (celsius * 9 / 5) + 32;
+            return Math.round(val);
+        }
+
+        function toggleUnit() {
+            AppState.unit = AppState.unit === 'C' ? 'F' : 'C';
+            
+            // Mettre à jour tous les boutons de bascule
+            document.querySelectorAll('.unit-toggle-btn').forEach(btn => {
+                if (AppState.unit === 'C') {
+                    btn.innerHTML = `°C / <span class="text-white/60">°F</span>`;
+                } else {
+                    btn.innerHTML = `<span class="text-white/60">°C</span> / °F`;
+                }
+            });
+
+            if (AppState.weatherData) {
+                renderWeather(AppState.weatherData);
+            }
+        }
+
+        /**
+         * CHANGEMENT DE THÈME VISUEL DYNAMIQUE
+         */
+        function applyWeatherTheme(themeType) {
+            const body = document.body;
+            body.classList.remove('theme-sunny', 'theme-cloudy', 'theme-rain', 'theme-snow', 'theme-night');
+            body.classList.add(`theme-${themeType}`);
+        }
+
+        /**
+         * GÉNÉRATION DE DONNÉES DE SECOURS RÉALISTES (Fallback si API ou réseau indisponible)
+         */
+        function generateFallbackWeatherData(location) {
+            const now = new Date();
+            const currentHour = now.getHours();
+            const isDay = currentHour >= 7 && currentHour <= 19 ? 1 : 0;
+
+            // Varier légèrement les données selon la ville
+            const seed = location.name.length;
+            const baseTemp = 12 + (seed % 8);
+            const weatherCode = isDay ? (seed % 2 === 0 ? 1 : 2) : 0;
+
+            const hourlyTime = [];
+            const hourlyTemp = [];
+            const hourlyCode = [];
+            const hourlyIsDay = [];
+
+            for (let i = 0; i < 48; i++) {
+                const futureDate = new Date(now.getTime() + i * 3600 * 1000);
+                const h = futureDate.getHours();
+                hourlyTime.push(futureDate.toISOString());
+                // Courbe sinusoïdale de température journalière
+                const variation = Math.sin(((h - 8) / 24) * Math.PI * 2) * 4.5;
+                hourlyTemp.push(Number((baseTemp + variation).toFixed(1)));
+                hourlyCode.push(h >= 14 && h <= 17 && seed % 3 === 0 ? 61 : weatherCode);
+                hourlyIsDay.push(h >= 7 && h <= 19 ? 1 : 0);
+            }
+
+            const dailyTime = [];
+            const dailyMax = [];
+            const dailyMin = [];
+            const dailyCode = [];
+            const dailyUv = [];
+
+            const sampleCodes = [1, 2, 61, 3, 0, 1, 2];
+            for (let d = 0; d < 7; d++) {
+                const dayDate = new Date(now.getTime() + d * 86400 * 1000);
+                dailyTime.push(dayDate.toISOString().split('T')[0]);
+                dailyMax.push(Number((baseTemp + 4 + (d % 3)).toFixed(1)));
+                dailyMin.push(Number((baseTemp - 4 - (d % 2)).toFixed(1)));
+                dailyCode.push(sampleCodes[(d + seed) % sampleCodes.length]);
+                dailyUv.push(Number((3.5 + (d % 3)).toFixed(1)));
+            }
+
+            return {
+                timezone: 'Europe/Paris',
+                current: {
+                    temperature_2m: baseTemp,
+                    apparent_temperature: baseTemp - 1.2,
+                    relative_humidity_2m: 64,
+                    wind_speed_10m: 14,
+                    weather_code: weatherCode,
+                    is_day: isDay
+                },
+                hourly: {
+                    time: hourlyTime,
+                    temperature_2m: hourlyTemp,
+                    weather_code: hourlyCode,
+                    is_day: hourlyIsDay
+                },
+                daily: {
+                    time: dailyTime,
+                    weather_code: dailyCode,
+                    temperature_2m_max: dailyMax,
+                    temperature_2m_min: dailyMin,
+                    uv_index_max: dailyUv
+                }
+            };
+        }
+
+        /**
+         * APPEL API OPEN-METEO (Météo Temps Réel + 24h + 7j)
+         */
+        async function fetchWeatherForLocation(location) {
+            AppState.currentLocation = location;
+            updateQuickCitiesActiveState();
+
+            const mainEl = document.getElementById('weather-main-content');
+            mainEl.classList.add('opacity-60');
+
+            try {
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${location.lat}&longitude=${location.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m&hourly=temperature_2m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,uv_index_max&timezone=auto&forecast_days=7`;
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error(`Erreur API: ${response.status}`);
+
+                const data = await response.json();
+                AppState.weatherData = data;
+                AppState.isSimulated = false;
+                hideToast();
+                renderWeather(data);
+            } catch (error) {
+                console.warn('Échec Open-Meteo, basculement sur données simulées réalistes :', error);
+                const fallbackData = generateFallbackWeatherData(location);
+                AppState.weatherData = fallbackData;
+                AppState.isSimulated = true;
+                showToast("Connexion à l'API météo limitée — Affichage de prévisions simulées réalistes.");
+                renderWeather(fallbackData);
+            } finally {
+                mainEl.classList.remove('opacity-60');
+            }
+        }
+
+        /**
+         * RENDU DE L'INTERFACE METEO
+         */
+        function renderWeather(data) {
+            const loc = AppState.currentLocation;
+            const current = data.current;
+            const hourly = data.hourly;
+            const daily = data.daily;
+
+            // 1. Informations de localisation et badge démo
+            document.getElementById('city-name').textContent = loc.name;
+            const regionParts = [loc.region, loc.country].filter(Boolean);
+            document.getElementById('city-region').textContent = regionParts.join(', ');
+
+            const demoBadge = document.getElementById('data-source-badge');
+            if (AppState.isSimulated) {
+                demoBadge.classList.remove('hidden');
+            } else {
+                demoBadge.classList.add('hidden');
+            }
+
+            // Heure locale approximative via fuseau horaire retourné
+            try {
+                const localTimeStr = new Date().toLocaleTimeString('fr-FR', {
+                    timeZone: data.timezone || 'Europe/Paris',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                document.getElementById('local-time').textContent = `Heure locale : ${localTimeStr}`;
+            } catch (e) {
+                document.getElementById('local-time').textContent = `Fuseau : ${data.timezone || 'Local'}`;
+            }
+
+            // 2. Conditions actuelles & Thème dynamique
+            const weatherMeta = getWeatherInfo(current.weather_code, current.is_day);
+            applyWeatherTheme(weatherMeta.type);
+
+            document.getElementById('current-weather-icon').innerHTML = getWeatherSVG(weatherMeta.icon);
+            document.getElementById('current-temp').textContent = `${formatTemp(current.temperature_2m)}°`;
+            document.getElementById('weather-condition').textContent = weatherMeta.label;
+            document.getElementById('temp-minmax').textContent = `Max ${formatTemp(daily.temperature_2m_max[0])}° • Min ${formatTemp(daily.temperature_2m_min[0])}°`;
+
+            // 3. Détails clés (Ressenti, Humidité, Vent, Indice UV)
+            document.getElementById('detail-feels-like').textContent = `${formatTemp(current.apparent_temperature)}°`;
+            document.getElementById('detail-humidity').textContent = `${Math.round(current.relative_humidity_2m)}%`;
+            document.getElementById('detail-wind').textContent = `${Math.round(current.wind_speed_10m)} km/h`;
+
+            const uvVal = daily.uv_index_max && daily.uv_index_max[0] !== undefined ? daily.uv_index_max[0] : 0;
+            let uvLabel = 'Faible';
+            if (uvVal >= 8) uvLabel = 'Très élevé';
+            else if (uvVal >= 6) uvLabel = 'Élevé';
+            else if (uvVal >= 3) uvLabel = 'Modéré';
+            document.getElementById('detail-uv').textContent = `${Math.round(uvVal)} (${uvLabel})`;
+
+            // 4. Conseil contextuel du jour
+            document.getElementById('weather-advice').textContent = generateAdvice(current.weather_code, current.temperature_2m, current.wind_speed_10m);
+
+            // 5. Rendu des prévisions sur 24 heures
+            renderHourlyForecast(hourly);
+
+            // 6. Rendu des prévisions sur 7 jours
+            renderDailyForecast(daily);
+        }
+
+        function generateAdvice(code, tempC, wind) {
+            if ([95, 96, 99].includes(code)) return "Risque d'orage aujourd'hui. Évitez les activités prolongées en extérieur et restez à l'abri.";
+            if ([71, 73, 75, 77, 85, 86].includes(code)) return "Chutes de neige prévues. Couvrez-vous chaudement et soyez prudent sur les routes.";
+            if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return "Prévoyez un parapluie ou un imperméable avant de sortir, des précipitations sont attendues.";
+            if (tempC >= 28) return "Chaleur marquée : hydratez-vous régulièrement et privilégiez l'ombre aux heures les plus chaudes.";
+            if (tempC <= 5) return "Températures fraîches : pensez à porter un manteau chaud, surtout en matinée et en soirée.";
+            if (wind >= 35) return "Rafales de vent sensibles aujourd'hui. Prudence lors de vos déplacements.";
+            return "Conditions agréables et stables aujourd'hui, idéales pour profiter de l'extérieur.";
+        }
+
+        /**
+         * RENDU HORAIRE 24H
+         */
+        function renderHourlyForecast(hourly) {
+            const container = document.getElementById('hourly-forecast-container');
+            container.innerHTML = '';
+
+            // Trouver l'index de l'heure actuelle dans le tableau hourly.time
+            const now = new Date();
+            let startIndex = hourly.time.findIndex(t => new Date(t) >= now);
+            if (startIndex === -1) startIndex = 0;
+            // Reculer de 1 pour inclure l'heure en cours ("Maint.")
+            if (startIndex > 0) startIndex -= 1;
+
+            const sliceEnd = Math.min(startIndex + 24, hourly.time.length);
+
+            for (let i = startIndex; i < sliceEnd; i++) {
+                const timeObj = new Date(hourly.time[i]);
+                const isNow = i === startIndex;
+                const hourLabel = isNow ? 'Maint.' : `${String(timeObj.getHours()).padStart(2, '0')}h`;
+                const isDay = hourly.is_day ? hourly.is_day[i] : (timeObj.getHours() >= 7 && timeObj.getHours() <= 19 ? 1 : 0);
+                const info = getWeatherInfo(hourly.weather_code[i], isDay);
+                const temp = formatTemp(hourly.temperature_2m[i]);
+
+                const card = document.createElement('div');
+                card.className = `flex flex-col items-center justify-between min-w-[4.5rem] py-3.5 px-2.5 rounded-2xl glass-card-hover ${isNow ? 'bg-white/25 border border-white/40 shadow-md' : 'bg-white/10'}`;
+                card.innerHTML = `
+                    <span class="text-xs font-medium ${isNow ? 'text-white font-bold' : 'text-white/80'}">${hourLabel}</span>
+                    <div class="w-9 h-9 my-2.5">
+                        ${getWeatherSVG(info.icon)}
+                    </div>
+                    <span class="text-sm font-bold">${temp}°</span>
+                `;
+                container.appendChild(card);
+            }
+        }
+
+        /**
+         * RENDU JOURNALIER 7 JOURS
+         */
+        function renderDailyForecast(daily) {
+            const container = document.getElementById('daily-forecast-container');
+            container.innerHTML = '';
+
+            const daysFr = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+            
+            // Calculer min global et max global de la semaine pour la barre de progression thermique
+            const weekMin = Math.min(...daily.temperature_2m_min);
+            const weekMax = Math.max(...daily.temperature_2m_max);
+            const totalRange = Math.max(weekMax - weekMin, 1);
+
+            for (let i = 0; i < daily.time.length; i++) {
+                const dateObj = new Date(daily.time[i] + 'T12:00:00');
+                const dayName = i === 0 ? "Aujourd'hui" : (i === 1 ? 'Demain' : daysFr[dateObj.getDay()]);
+                const info = getWeatherInfo(daily.weather_code[i], 1);
+                
+                const minC = daily.temperature_2m_min[i];
+                const maxC = daily.temperature_2m_max[i];
+
+                // Positionnement de la barre colorée
+                const leftPercent = ((minC - weekMin) / totalRange) * 100;
+                const widthPercent = Math.max(((maxC - minC) / totalRange) * 100, 8);
+
+                const row = document.createElement('div');
+                row.className = 'py-3 flex items-center justify-between gap-3 sm:gap-4';
+                row.innerHTML = `
+                    <div class="w-24 sm:w-28 shrink-0">
+                        <p class="text-sm font-semibold ${i === 0 ? 'text-white' : 'text-white/90'}">${dayName}</p>
+                        <p class="text-[11px] text-white/65 truncate">${info.label}</p>
+                    </div>
+
+                    <div class="w-8 h-8 shrink-0">
+                        ${getWeatherSVG(info.icon)}
+                    </div>
+
+                    <div class="flex items-center gap-2.5 flex-1 max-w-xs">
+                        <span class="text-xs sm:text-sm font-medium text-white/70 w-8 text-right">${formatTemp(minC)}°</span>
+                        <div class="flex-1 h-1.5 bg-white/15 rounded-full overflow-hidden relative">
+                            <div class="absolute top-0 bottom-0 rounded-full bg-gradient-to-r from-sky-300 via-amber-300 to-orange-400" 
+                                 style="left: ${leftPercent}%; width: ${widthPercent}%;"></div>
+                        </div>
+                        <span class="text-xs sm:text-sm font-bold text-white w-8">${formatTemp(maxC)}°</span>
+                    </div>
+                `;
+                container.appendChild(row);
+            }
+        }
+
+        /**
+         * BARRE DE RECHERCHE & AUTOCOMPLÉTION (API Geocoding Open-Meteo)
+         */
+        function initSearch() {
+            const input = document.getElementById('city-search-input');
+            const suggestionsBox = document.getElementById('search-suggestions');
+            const clearBtn = document.getElementById('clear-search-btn');
+
+            input.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                
+                if (query.length > 0) {
+                    clearBtn.classList.remove('hidden');
+                } else {
+                    clearBtn.classList.add('hidden');
+                    suggestionsBox.classList.add('hidden');
+                    return;
+                }
+
+                clearTimeout(AppState.searchTimeout);
+                if (query.length < 2) return;
+
+                AppState.searchTimeout = setTimeout(() => {
+                    searchCities(query);
+                }, 300);
+            });
+
+            // Fermer les suggestions si clic en dehors
+            document.addEventListener('click', (e) => {
+                if (!input.contains(e.target) && !suggestionsBox.contains(e.target)) {
+                    suggestionsBox.classList.add('hidden');
+                }
+            });
+
+            // Réouvrir si focus avec texte présent
+            input.addEventListener('focus', () => {
+                if (input.value.trim().length >= 2 && suggestionsBox.children.length > 0) {
+                    suggestionsBox.classList.remove('hidden');
+                }
+            });
+        }
+
+        async function searchCities(query) {
+            const suggestionsBox = document.getElementById('search-suggestions');
+            suggestionsBox.innerHTML = `<div class="px-4 py-3 text-xs text-white/75 flex items-center gap-2">
+                <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                Recherche de "${query}"...
+            </div>`;
+            suggestionsBox.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=6&language=fr&format=json`);
+                if (!res.ok) throw new Error('Erreur géocodage');
+                const data = await res.json();
+
+                if (!data.results || data.results.length === 0) {
+                    // Filtrer localement dans les villes rapides en fallback
+                    const localMatches = QUICK_CITIES.filter(c => c.name.toLowerCase().includes(query.toLowerCase()));
+                    if (localMatches.length > 0) {
+                        renderSuggestions(localMatches);
+                    } else {
+                        suggestionsBox.innerHTML = `<div class="px-4 py-3 text-sm text-white/75">Aucune ville trouvée pour « ${query} ».</div>`;
+                    }
+                    return;
+                }
+
+                const formattedResults = data.results.map(item => ({
+                    name: item.name,
+                    region: item.admin1 || '',
+                    country: item.country || '',
+                    lat: item.latitude,
+                    lon: item.longitude
+                }));
+
+                renderSuggestions(formattedResults);
+            } catch (err) {
+                // Recherche hors-ligne dans QUICK_CITIES
+                const localMatches = QUICK_CITIES.filter(c => c.name.toLowerCase().includes(query.toLowerCase()));
+                if (localMatches.length > 0) {
+                    renderSuggestions(localMatches);
+                } else {
+                    suggestionsBox.innerHTML = `<div class="px-4 py-3 text-xs text-amber-200">Recherche en ligne indisponible. Utilisez les villes d'accès rapide ci-dessous.</div>`;
+                }
+            }
+        }
+
+        function renderSuggestions(cities) {
+            const suggestionsBox = document.getElementById('search-suggestions');
+            suggestionsBox.innerHTML = '';
+
+            cities.forEach(city => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'w-full text-left px-4 py-3 hover:bg-white/15 transition-colors flex items-center justify-between gap-2';
+                const subtext = [city.region, city.country].filter(Boolean).join(', ');
+                
+                btn.innerHTML = `
+                    <div>
+                        <p class="text-sm font-semibold text-white">${city.name}</p>
+                        <p class="text-xs text-white/70">${subtext}</p>
+                    </div>
+                    <svg class="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                `;
+
+                btn.addEventListener('click', () => {
+                    document.getElementById('city-search-input').value = city.name;
+                    document.getElementById('clear-search-btn').classList.remove('hidden');
+                    suggestionsBox.classList.add('hidden');
+                    fetchWeatherForLocation(city);
+                });
+
+                suggestionsBox.appendChild(btn);
+            });
+
+            suggestionsBox.classList.remove('hidden');
+        }
+
+        function clearSearch() {
+            const input = document.getElementById('city-search-input');
+            input.value = '';
+            document.getElementById('clear-search-btn').classList.add('hidden');
+            document.getElementById('search-suggestions').classList.add('hidden');
+            input.focus();
+        }
+
+        /**
+         * VILLES RAPIDES
+         */
+        function initQuickCities() {
+            const container = document.getElementById('quick-cities-container');
+            container.innerHTML = '';
+
+            QUICK_CITIES.forEach(city => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.dataset.cityName = city.name;
+                btn.className = 'quick-city-pill px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-medium glass-panel hover:bg-white/25 transition-all shrink-0 cursor-pointer';
+                btn.textContent = city.name;
+                btn.addEventListener('click', () => {
+                    document.getElementById('city-search-input').value = '';
+                    document.getElementById('clear-search-btn').classList.add('hidden');
+                    fetchWeatherForLocation(city);
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        function updateQuickCitiesActiveState() {
+            document.querySelectorAll('.quick-city-pill').forEach(pill => {
+                if (pill.dataset.cityName.toLowerCase() === AppState.currentLocation.name.toLowerCase()) {
+                    pill.classList.add('bg-white/30', 'border-white/60', 'font-bold');
+                } else {
+                    pill.classList.remove('bg-white/30', 'border-white/60', 'font-bold');
+                }
+            });
+        }
+
+        /**
+         * GÉOLOCALISATION AUTOMATIQUE + GESTION DES ERREURS
+         */
+        function handleGeolocation(isInitialBoot = false) {
+            if (!('geolocation' in navigator)) {
+                if (!isInitialBoot) {
+                    showToast("La géolocalisation n'est pas prise en charge par votre navigateur.");
+                }
+                fetchWeatherForLocation(AppState.currentLocation);
+                return;
+            }
+
+            if (!isInitialBoot) {
+                showToast("Localisation GPS en cours...");
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    let resolvedLocation = {
+                        name: 'Ma position',
+                        region: `${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E`,
+                        country: '',
+                        lat,
+                        lon
+                    };
+
+                    // Tentative de géocodage inversé gratuit (BigDataCloud ou Nominatim) pour obtenir le nom de la ville
+                    try {
+                        const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=fr`);
+                        if (geoRes.ok) {
+                            const geoData = await geoRes.json();
+                            const cityName = geoData.city || geoData.locality || geoData.principalSubdivision;
+                            if (cityName) {
+                                resolvedLocation = {
+                                    name: cityName,
+                                    region: geoData.principalSubdivision || '',
+                                    country: geoData.countryName || '',
+                                    lat,
+                                    lon
+                                };
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Géocodage inversé ignoré, utilisation des coordonnées GPS.');
+                    }
+
+                    hideToast();
+                    fetchWeatherForLocation(resolvedLocation);
+                },
+                (error) => {
+                    console.warn('Géolocalisation refusée ou indisponible :', error.message);
+                    if (!isInitialBoot) {
+                        showToast("Accès à la position refusé ou indisponible. Affichage de Saint-Prix par défaut.");
+                    }
+                    // Charger la ville par défaut (Saint-Prix)
+                    fetchWeatherForLocation(AppState.currentLocation);
+                },
+                { timeout: 6000, maximumAge: 300000 }
+            );
+        }
+
+        /**
+         * INITIALISATION AU CHARGEMENT
+         */
+        window.addEventListener('DOMContentLoaded', () => {
+            // Afficher la date du jour en français
+            const now = new Date();
+            const dateFormatted = now.toLocaleDateString('fr-FR', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+            });
+            document.getElementById('current-date-header').textContent = dateFormatted.charAt(0).toUpperCase() + dateFormatted.slice(1);
+
+            initQuickCities();
+            initSearch();
+
+            // Lancer la géolocalisation automatique (bascule automatiquement sur Saint-Prix si refusée)
+            handleGeolocation(true);
+        });
+    </script>
+</body>
+</html>
